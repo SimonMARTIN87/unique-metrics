@@ -319,6 +319,24 @@ def create_line(folderName,dates, y, title) :
 	fig = go.Figure(data=data, layout=layout)
 	py.plot(fig, filename=folderName+'/'+name,sharing='private')
 
+def create_multiple_lines(folderName, dates, matrix, title) :
+	data = []
+	for line in matrix.keys() :
+		trace = go.Scatter(
+			x = dates,
+			y = matrix[line],
+			mode = 'lines',
+			name = line
+		)
+		data.append(trace)
+	layout = go.Layout(
+		title=title,
+		yaxis = dict(title='Number of conversations')
+	)
+	name = title.replace(' ','_')
+	fig = go.Figure(data=data, layout=layout)
+	py.plot(fig, filename=folderName+'/'+name,sharing='private')	
+
 def create_group_sessions(folderName,duration,welcomingQuestion,whyMcDonalds,satisfactionQuestion,satisfactionQuestionReply,unhappyClientQuestionReply,dates, title) : 
 	trace1 = go.Bar(
 	    x=dates,
@@ -458,5 +476,26 @@ def create_group(folderName,mobile,desktop, x, title) :
 	name = title.replace(' ','_')
 	fig = go.Figure(data=data, layout=layout)
 	py.plot(fig, filename=folderName+'/'+name,sharing='private')
+
+
+def create_multiple_bars(folderName, dates, matrix, title):
+	data = []
+	for line in matrix.keys() :
+		if line == 'Dates' :
+			continue
+		trace = go.Bar(
+			x = dates,
+			y = matrix[line],
+			name= line
+		)
+		data.append(trace)
+	layout = go.Layout(
+		title=title,
+		yaxis = dict(title='Number')
+	)
+	name = title.replace(' ','_')
+	fig = go.Figure(data=data, layout=layout)
+	py.plot(fig, filename=folderName+'/'+name,sharing='private')	
+
 
 

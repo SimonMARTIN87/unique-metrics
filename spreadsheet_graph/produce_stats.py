@@ -1,10 +1,12 @@
 from pymongo import MongoClient
 import pymongo
 from bson.objectid import ObjectId
+from bson.code import Code
 import pandas as pd 
 from datetime import timedelta, datetime, date
 import numpy as np
 import json
+from ua_parser import user_agent_parser
 
 client = MongoClient()
 db = client.app64723109
@@ -194,7 +196,7 @@ def conv_by_browser(ids_conv, ids_company, levels, start, end) :
 	dico_sentinel = {}
 
 	for conv in conversations.find({'_id' : {'$in' : ids_conv}}) :
-		useragent = conversation.get('userAgent')
+		useragent = conv.get('userAgent')
 		browser = user_agent_parser.ParseUserAgent(useragent).get('family')
 		device_temp = user_agent_parser.ParseDevice(useragent).get('family')
 
@@ -282,3 +284,89 @@ def return_with_new_conv(ids_conv, ids_company, levels, start, end) :
 	nb_candidates_total = len(ids_candidates_company)
 
 	return [nb_candidates_return, nb_candidates_unique, nb_candidates_total]
+
+source_mapper = Code("""
+		function () {
+			if (this.refData) {
+				var origin = this.refData.match(/"origin":"([^\"]+)"/);
+				if (origin) {
+					origin = origin[1];
+					var parts = origin.split('.');
+					if (parts.length >= 2) {
+						origin = parts[parts.length - 2];
+						if (origin === 'co' || origin === 'com') {
+							origin = parts[parts.length - 3];
+						}
+					}
+				} else {
+					origin = 'website';
+				}
+				emit(origin ,1);
+			} else {
+				emit('website' ,1);
+			}
+		}
+	""")
+
+source_reducer = Code("""
+		function (key, value) {
+			var total = 0;
+          	for (var i = 0; i < value.length; i++) {
+        	    total += value[i];
+        	}
+            return parseInt(total);
+		}
+	""")
+
+device_mapper = Code("""
+		function () {
+			var regex = /Mobile|iP(hone|od)|Android|BlackBerry|IEMobile|Kindle|NetFront|Silk-Accelerated|(hpw|web)OS|Fennec|Minimo|Opera M(obi|ini)|Blazer|Dolfin|Dolphin|Skyfire|Zune/;
+			if (regex.test(this.userAgent)) {
+				emit('mobile', 1);
+			} else {
+				if (/Tablet/.test(this.userAgent)) {
+					emit('tablet',1);
+				} else {
+					emit('desktop',1);
+				}
+			}
+		}
+	""")
+
+
+
+def convs_by_source(ids_conv, ids_company, levels, start, end) :
+	results = conversations.map_reduce(source_mapper, source_reducer, "my_res", query = {'_id':{'$in': ids_conv}} )
+	finalResult = [];
+ 	for doc in results.find():
+ 		finalResult.append(doc);
+ 	return finalResult;
+
+
+def lvl7_by_source(ids_conv, ids_company, levels, start, end) :
+	results = conversations.map_reduce(source_mapper, source_reducer, "my_res", query = {'_id':{'$in': ids_conv}, 'meta.completionLevel':{'$gte':80}} )
+	finalResult = [];
+ 	for doc in results.find():
+ 		finalResult.append(doc);
+ 	return finalResult;
+
+
+def convs_by_device(ids_conv, ids_company, levels, start, end) :
+	results = conversations.map_reduce(device_mapper, source_reducer, "my_res", query = {'_id':{'$in': ids_conv}} )
+	finalResult = [];
+ 	for doc in results.find():
+ 		finalResult.append(doc);
+ 	return finalResult;
+
+def lvl7_by_device(ids_conv, ids_company, levels, start, end) :
+ 	results = conversations.map_reduce(device_mapper, source_reducer, "my_res", query = {'_id':{'$in': ids_conv}, 'meta.completionLevel':{'$gte':80}} )
+	finalResult = [];
+ 	for doc in results.find():
+ 		finalResult.append(doc);
+ 	return finalResult;
+
+
+
+
+
+

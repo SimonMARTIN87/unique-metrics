@@ -1,7 +1,7 @@
 import pandas as pd 
 from datetime import timedelta, datetime, date
 from produce_stats import nps_by_time, count_conversations, count_level_reached, sentinel_level,\
-time_by_session,which_return,conv_by_browser,return_with_new_conv, ids_conv
+time_by_session,which_return,conv_by_browser,return_with_new_conv, ids_conv, convs_by_source, lvl7_by_source, convs_by_device, lvl7_by_device
 from produce_stats_by_period import evolution_by_period, average_periode_hours, average_periode_days 
 
 def create_xlsx(debut,fin,company) : 
@@ -34,6 +34,49 @@ def create_xlsx(debut,fin,company) :
 	apd_nbconv_df.to_excel(writer,sheet_name='average #conv by days',index = False)
 
 	print '1/10'
+
+	evolution_conv_bysource = evolution_by_period(debut, fin, convs_by_source, company)
+	evolution_conv_bysource, sources_conv = formalize_data(evolution_conv_bysource)
+	sources_conv.append('Dates')
+	evolution_conv_bysource_df = pd.DataFrame(evolution_conv_bysource, columns = sources_conv)
+	evolution_conv_bysource_df.to_excel(writer, sheet_name='#conv by source', index= False)
+
+	evolution_lvl7_bysource = evolution_by_period(debut, fin, lvl7_by_source, company)
+	evolution_lvl7_bysource, sources_lvl7 = formalize_data(evolution_lvl7_bysource)
+	sources_lvl7.append('Dates')
+	evolution_lvl7_bysource_df = pd.DataFrame(evolution_lvl7_bysource, columns = sources_lvl7)
+	evolution_lvl7_bysource_df.to_excel(writer, sheet_name='#lvl7 by source', index=False)
+
+	aph_conv_by_source = average_periode_days(evolution_conv_bysource)
+	aph_conv_by_source_df = pd.DataFrame(aph_conv_by_source, columns = sources_conv)
+	aph_conv_by_source_df.to_excel(writer, sheet_name='average #conv by day by source', index = False)
+
+	aph_lvl7_by_source = average_periode_days(evolution_lvl7_bysource)
+	aph_lvl7_by_source_df = pd.DataFrame(aph_lvl7_by_source, columns = sources_lvl7)
+	aph_lvl7_by_source_df.to_excel(writer, sheet_name='average #lvl7 by day by source', index = False)
+
+
+	evolution_conv_bydevice = evolution_by_period(debut, fin, convs_by_device, company)
+	evolution_conv_bydevice, devices = formalize_data(evolution_conv_bydevice)
+	devices.append('Dates')
+	evolution_conv_bydevice_df = pd.DataFrame(evolution_conv_bydevice, columns = devices)
+	evolution_conv_bydevice_df.to_excel(writer, sheet_name='#conv by day dy device', index = False)
+
+	apd_conv_by_device = average_periode_days(evolution_conv_bydevice)
+	apd_conv_by_device_df = pd.DataFrame(apd_conv_by_device, columns = devices)
+	apd_conv_by_device_df.to_excel(writer, sheet_name='average #conv by day by device')
+
+
+	evolution_lvl7_bydevice = evolution_by_period(debut, fin, lvl7_by_device, company)
+	evolution_lvl7_bydevice, devicesLvl7 = formalize_data(evolution_lvl7_bydevice)
+	devicesLvl7.append('Dates')
+	evolution_lvl7_bydevice_df = pd.DataFrame(evolution_lvl7_bydevice, columns = devices)
+	evolution_lvl7_bydevice_df.to_excel(writer, sheet_name='#lvl7 by day dy device', index = False)
+
+	apd_lvl7_by_device = average_periode_days(evolution_lvl7_bydevice)
+	apd_lvl7_by_device_df = pd.DataFrame(apd_lvl7_by_device, columns = devicesLvl7)
+	apd_lvl7_by_device_df.to_excel(writer, sheet_name='average #lvl7 by day by device')
+
 
 	evolution_levels_hours = evolution_by_period(debut,fin,count_level_reached,company,'hours')
 	evolution_levels_days = evolution_by_period(debut,fin,count_level_reached,company)
@@ -119,6 +162,23 @@ def create_xlsx(debut,fin,company) :
 	levels_df = levels_df.set_index('indexes')
 	levels_df.to_excel(writer,sheet_name='levels by device')
 
+	conversionRates = {}
+	for k in levels:
+		conversionRates[k] = []
+		if (k == 'indexes') :
+			for i in xrange(len(levels[k])-2) :
+				tmp = levels[k][i+1]+'/'+levels[k][i]
+				conversionRates[k].append(tmp)
+		else :
+			for i in xrange(len(levels[k])-2) :
+				tmp = float(levels[k][i+1]) / float(levels[k][i])
+				tmp = min(tmp*100, 100)
+				conversionRates[k].append(tmp)
+
+	conversionRates_df = pd.DataFrame.from_dict(conversionRates)
+	conversionRates_df = conversionRates_df.set_index('indexes')
+	conversionRates_df.to_excel(writer, sheet_name='conversion ratios by device')
+
 	print '6/10'
 
 	nps_df = pd.DataFrame.from_dict(nps)
@@ -146,3 +206,32 @@ def create_xlsx(debut,fin,company) :
 	writer.save()
 
 	print '10/10'
+
+def formalize_data(matrix) :
+	dates = []
+	sources = []
+	resMatrix = {}
+	for line in matrix :
+		tempLine = {};
+		for obj in line :
+			if isinstance(obj, dict):
+				sources.append(obj.get('_id'))
+				tempLine[obj.get('_id')] = obj.get('value');
+			elif isinstance(obj, date):
+				dates.append(obj)
+				resMatrix[obj] = tempLine
+	unique_sources = []
+	[unique_sources.append(item) for item in sources if item not in unique_sources]
+
+	finalResult = []
+	#new that we got the sources list, formalize the matrix
+	for day in dates :
+		lineRes = []
+		for src in unique_sources :
+			if src in resMatrix[day] :
+				lineRes.append(resMatrix[day][src])
+			else :
+				lineRes.append(0)
+		lineRes.append(day)
+		finalResult.append(lineRes)
+	return finalResult, unique_sources

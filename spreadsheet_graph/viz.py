@@ -1,5 +1,5 @@
 import pandas as pd
-from plot_graph import create_line, create_group_nps, create_group_sentinel_CV, create_group_sentinel_reminder, create_group_level_with_Pup,create_group_level_wout_Pup,create_group, create_group_nbconv, create_group_sessions, create_group_nbconv1
+from plot_graph import create_line, create_multiple_lines ,create_group_nps, create_group_sentinel_CV, create_group_sentinel_reminder, create_group_level_with_Pup,create_group_level_wout_Pup, create_group, create_group_nbconv, create_group_sessions, create_group_nbconv1, create_multiple_bars
 
 
 def create_graph(filename, company, debut, fin) : 
@@ -41,6 +41,16 @@ def create_graph(filename, company, debut, fin) :
 		evolution_levels_days_df['level 6'].values.tolist(), evolution_levels_days_df['level 7'].values.tolist(),\
 		evolution_levels_days_df['level 8'].values.tolist(), evolution_levels_days_df['Exported'].values.tolist(),\
 		pd.to_datetime(evolution_levels_days_df['Dates']),'Evolution of completion level '+str(c)+' '+date_debut+' '+date_fin)
+
+	dataMatrix = {
+		'PoppedUp' : evolution_levels_days_df['PoppedUp'],
+		'Lvl 7' : evolution_levels_days_df['level 7'] 
+	}
+	create_multiple_lines(folderName,evolution_levels_days_df['Dates'], dataMatrix,
+		'Evolution of PoppedUp and Lvl 7 '+str(c)+' '+date_debut+' '+date_fin )
+
+	create_line(folderName, evolution_levels_days_df['Dates'], evolution_levels_days_df['level 7'],
+		'Evolution of Lvl 7 '+str(c)+' '+date_debut+' '+date_fin )
 
 	create_group_level_wout_Pup(folderName,evolution_levels_days_df['Started'].values.tolist(),evolution_levels_days_df['level 1'].values.tolist(),\
 		evolution_levels_days_df['level 2'].values.tolist(),evolution_levels_days_df['level 3'].values.tolist(),\
@@ -200,3 +210,50 @@ def create_graph(filename, company, debut, fin) :
 	sentinel_df = pd.read_excel(filename, sheetname='sentinel by device', columns=['desktop','mobile'])
 	create_group(folderName,sentinel_df['mobile'].values.tolist(),levels_df['desktop'].values.tolist(),\
 		['send_cv','opened_cv','upload','export','reminder','returned'],'Comparison sentinel by device '+str(c)+' '+date_debut+' '+date_fin)
+
+	conv_bysource_df = pd.read_excel(filename, sheetname='#conv by source')
+	dataMatrix = {}
+	for k in conv_bysource_df.keys() :
+		if (k != 'Dates') :
+			dataMatrix[k] = conv_bysource_df[k]
+
+	create_multiple_lines(folderName,conv_bysource_df['Dates'], dataMatrix,
+	 	'Evolution of number of conv by source '+str(c)+' '+date_debut+' '+date_fin )
+
+	lvl7_by_source = pd.read_excel(filename, sheetname='#lvl7 by source')
+	dataMatrix = {}
+	for k in lvl7_by_source.keys() :
+		if (k != 'Dates') :
+			dataMatrix[k] = lvl7_by_source[k]
+
+	create_multiple_lines(folderName,lvl7_by_source['Dates'], dataMatrix,
+	 	'Evolution of number of Lvl 7 by source '+str(c)+' '+date_debut+' '+date_fin )
+
+
+	apd_nbconv_bysource = pd.read_excel(filename, sheetname = 'average #conv by day by source')
+	create_multiple_bars(folderName, apd_nbconv_bysource['Dates'], apd_nbconv_bysource,
+		'Average number of conversations by source'+str(c)+' '+date_debut+' '+date_fin )
+
+	apd_nblvl7_bysource = pd.read_excel(filename, sheetname = 'average #lvl7 by day by source')
+	create_multiple_bars(folderName, apd_nblvl7_bysource['Dates'], apd_nblvl7_bysource,
+		'Average number of lvl7 by source'+str(c)+' '+date_debut+' '+date_fin )
+
+	apd_nbconv_bydevice = pd.read_excel(filename, sheetname = 'average #conv by day by device')
+	create_multiple_bars(folderName, apd_nbconv_bydevice['Dates'], apd_nbconv_bydevice,
+		'Average number of conversations by device'+str(c)+' '+date_debut+' '+date_fin )
+
+	apd_nblvl7_bydevice = pd.read_excel(filename, sheetname = 'average #lvl7 by day by device')
+	create_multiple_bars(folderName, apd_nblvl7_bydevice['Dates'], apd_nblvl7_bydevice,
+		'Average number of Lvl 7 by device'+str(c)+' '+date_debut+' '+date_fin )
+
+	conversionRates = pd.read_excel(filename, sheetname= 'conversion ratios by device')
+	indexes = conversionRates['indexes']
+	del conversionRates['indexes']
+	create_multiple_lines(folderName, indexes , conversionRates,
+		'Conversion Ratio by device'+str(c)+' '+date_debut+' '+date_fin )
+
+
+
+
+
+

@@ -3,5 +3,5 @@ pymongo
 bson
 datetime
 numpy
-json
 plotly
+ua-parser
