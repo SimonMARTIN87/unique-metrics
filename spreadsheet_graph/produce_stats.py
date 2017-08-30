@@ -6,7 +6,10 @@ import pandas as pd
 from datetime import timedelta, datetime, date
 import numpy as np
 import json
-from ua_parser import user_agent_parser
+# from ua_parser import user_agent_parser
+from user_agents import parse as UAParse
+from collections import OrderedDict
+
 
 client = MongoClient()
 db = client.app64723109
@@ -36,6 +39,15 @@ nps = db['nps']
 events = db['events']
 sessions = db['sessions']
 
+def getCompanyId(company):
+	if company == 'Macdo' :
+		return ObjectId("58d12d7c9dab1c0004485209")
+	if company == 'Jamba' :
+		return ObjectId('591996f98a37080004bdbdda')
+	if company == 'Halal' :
+		return ObjectId('591d0580161f480004e6501a')
+	return None
+
 ### Percentage completion level
 def ids_conv(start,end, company) :
 	if company == 'Macdo' :
@@ -63,22 +75,33 @@ def count_conversations(ids_conv, ids_company, levels,start,end) :
 
 def count_level_reached(ids_conv, ids_company, levels,start,end) :
 
-	poppedup = conversations.find({'_id' : {'$in' : ids_conv}}).count()
-	started = messages.find({'$and' : [{'conversation' : {'$in' : ids_conv},'_dialogue': {'$in' : levels['0']}}]}).count()
-	level_1 = messages.find({'$and' : [{'conversation' : {'$in' : ids_conv},'_dialogue': {'$in' : levels['1']}}]}).count()
-	level_2 = messages.find({'$and' : [{'conversation' : {'$in' : ids_conv},'_dialogue': {'$in' : levels['2']}}]}).count()
-	level_3 = messages.find({'$and' : [{'conversation' : {'$in' : ids_conv},'_dialogue': {'$in' : levels['3']}}]}).count()
-	level_4 = messages.find({'$and' : [{'conversation' : {'$in' : ids_conv},'_dialogue': {'$in' : levels['4']}}]}).count()
-	level_5 = messages.find({'$and' : [{'conversation' : {'$in' : ids_conv},'_dialogue': {'$in' : levels['5']}}]}).count()
-	level_6 = messages.find({'$and' : [{'conversation' : {'$in' : ids_conv},'_dialogue': {'$in' : levels['6']}}]}).count()
-	level_7 = messages.find({'$and' : [{'conversation' : {'$in' : ids_conv},'_dialogue': {'$in' : levels['7']}}]})
-	level_8 = messages.find({'$and' : [{'conversation' : {'$in' : ids_conv},'_dialogue': {'$in' : levels['8']}}]}).count()
+	# poppedup = conversations.find({'_id' : {'$in' : ids_conv}}).count()
+	# started = messages.find({'$and' : [{'conversation' : {'$in' : ids_conv},'_dialogue': {'$in' : levels['0']}}]}).count()
+	# level_1 = messages.find({'$and' : [{'conversation' : {'$in' : ids_conv},'_dialogue': {'$in' : levels['1']}}]}).count()
+	# level_2 = messages.find({'$and' : [{'conversation' : {'$in' : ids_conv},'_dialogue': {'$in' : levels['2']}}]}).count()
+	# level_3 = messages.find({'$and' : [{'conversation' : {'$in' : ids_conv},'_dialogue': {'$in' : levels['3']}}]}).count()
+	# level_4 = messages.find({'$and' : [{'conversation' : {'$in' : ids_conv},'_dialogue': {'$in' : levels['4']}}]}).count()
+	# level_5 = messages.find({'$and' : [{'conversation' : {'$in' : ids_conv},'_dialogue': {'$in' : levels['5']}}]}).count()
+	# level_6 = messages.find({'$and' : [{'conversation' : {'$in' : ids_conv},'_dialogue': {'$in' : levels['6']}}]}).count()
+	# level_7 = messages.find({'$and' : [{'conversation' : {'$in' : ids_conv},'_dialogue': {'$in' : levels['7']}}]})
+	# level_8 = messages.find({'$and' : [{'conversation' : {'$in' : ids_conv},'_dialogue': {'$in' : levels['8']}}]}).count()
+	levels = [15,20,30,45,70,80,90];
+
+	poppedup = len(ids_conv)
+	started = conversations.count({'_id':{'$in':ids_conv}, 'meta.isStarted':True})
+	level_1 = started
+	level_2 = conversations.count({'_id':{'$in':ids_conv}, 'meta.completionLevel':{'$gte':15}})
+	level_3 = conversations.count({'_id':{'$in':ids_conv}, 'meta.completionLevel':{'$gte':20}})
+	level_4 = conversations.count({'_id':{'$in':ids_conv}, 'meta.completionLevel':{'$gte':30}})
+	level_5 = conversations.count({'_id':{'$in':ids_conv}, 'meta.completionLevel':{'$gte':45}})
+	level_6 = conversations.count({'_id':{'$in':ids_conv}, 'meta.completionLevel':{'$gte':70}})
+	level_7 = conversations.find({'_id':{'$in':ids_conv}, 'meta.completionLevel':{'$gte':80}})
+	level_8 = conversations.count({'_id':{'$in':ids_conv}, 'meta.completionLevel':{'$gte':90}})
 	
 	exported = 0
 
 	for l in level_7 :
-		candidate = conversations.find_one({'_id' : l.get('conversation')}).get('candidate')
-		exported += candidates.find({'_id' : candidate ,'files.cv' : {'$ne': None }}).count()
+		exported += candidates.find({'_id' : l['candidate'] ,'files.cv' : {'$ne': None }}).count()
 
 	return [poppedup,started, level_1, level_2, level_3, level_4,level_5,level_6,level_7.count(),level_8,exported]
 
@@ -365,8 +388,301 @@ def lvl7_by_device(ids_conv, ids_company, levels, start, end) :
  		finalResult.append(doc);
  	return finalResult;
 
+def exported_by_device(ids_conv, ids_company, levels, start, end) :
+ 	results = conversations.map_reduce(device_mapper, source_reducer, "my_res", query = {'_id':{'$in': ids_conv}, 'meta.exported':True} )
+	finalResult = [];
+ 	for doc in results.find():
+ 		finalResult.append(doc);
+ 	return finalResult;
+
+
+def volume_by_UA(ids_conv, ids_company, levels, start, end) :
+	nbOfConv = len(ids_conv)
+	convs = conversations.find({'_id':{'$in': ids_conv}})
+
+	res = {}
+
+	for conv in convs:
+		useragent = conv.get('userAgent')
+		parsed = user_agent_parser.Parse(useragent)
+		os = parsed['os']['family']
+		if 'Windows' in os:
+			os = 'Windows'
+		remade = os + ' : ' + parsed['user_agent']['family']
+
+		if remade in res.keys() :
+			res[remade] += 1
+		else :
+			res[remade] = 1
+
+	resKeys = sorted(res, key=res.get, reverse=True)
+	resKeys = resKeys[:6]
+	newRes = [{'_id':k, 'value': (float(res[k])/float(nbOfConv) * 100)} for k in resKeys]
+	return newRes
+
+def volume_lvl7_by_UA(ids_conv, ids_company, levels, start, end) :
+	nbOfConv = conversations.count({'_id':{'$in': ids_conv}, 'meta.completionLevel':{'$gte':80}})
+	convs = conversations.find({'_id':{'$in': ids_conv}, 'meta.completionLevel':{'$gte':80}})
+
+	res = {}
+
+	for conv in convs:
+		useragent = conv.get('userAgent')
+		parsed = user_agent_parser.Parse(useragent)
+		os = parsed['os']['family']
+		if 'Windows' in os:
+			os = 'Windows'
+		remade = os + ' : ' + parsed['user_agent']['family']
+
+		if remade in res.keys() :
+			res[remade] += 1
+		else :
+			res[remade] = 1
+
+	resKeys = sorted(res, key=res.get, reverse=True)
+	resKeys = resKeys[:6]
+	newRes = [{'_id':k, 'value': (float(res[k])/float(nbOfConv) * 100)} for k in resKeys]
+	return newRes
+
+def volume_exp_by_UA(ids_conv, ids_company, levels, start, end) :
+	nbOfConv = conversations.count({'_id':{'$in': ids_conv}, 'meta.exported':True})
+	convs = conversations.find({'_id':{'$in': ids_conv}, 'meta.exported':True})
+
+	res = {}
+
+	for conv in convs:
+		useragent = conv.get('userAgent')
+		parsed = user_agent_parser.Parse(useragent)
+		os = parsed['os']['family']
+		if 'Windows' in os:
+			os = 'Windows'
+		remade = os + ' : ' + parsed['user_agent']['family']
+
+		if remade in res.keys() :
+			res[remade] += 1
+		else :
+			res[remade] = 1
+
+	resKeys = sorted(res, key=res.get, reverse=True)
+	resKeys = resKeys[:6]
+	newRes = [{'_id':k, 'value': (float(res[k])/float(nbOfConv) * 100)} for k in resKeys]
+	return newRes
+
+def candidats_unique_exported(company, start, end) :
+	id_company = getCompanyId(company)
+	exported = list(conversations.find({'meta.createdOn': {'$lt': end , '$gte': start},'company': id_company,'meta.exported':True},{'candidate':True}))
+	
+	candidateIdList = []
+	for exp in exported:
+		candidateIdList.append(exp.get('candidate'))
+
+	candidateList = candidates.find({'_id':{'$in': candidateIdList}})
+	res = {}
+	for cand in candidateList:
+		email = cand['contact']['email']
+		if email in res.keys():
+			res[email] += 1
+		else :
+			res[email] = 1
+
+	freq = {
+		'1 candidature':0,
+		'2-4 candidatures':0,
+		'5-10 candidatures':0,
+		'10+ candidatures':0
+	}
+	for mail in res.keys():
+		nb = res[mail]
+		if nb > 1:
+			if nb > 4 :
+				if nb > 10 :
+					freq['10+ candidatures'] += 1
+				else:
+					freq['5-10 candidatures'] += 1
+			else :
+				freq['2-4 candidatures'] += 1
+		else :
+			freq['1 candidature'] += 1
+
+	return res, freq
+
+
+def average_conversion_by_UA(company, start, end):
+	id_company = getCompanyId(company)
+
+	levels = [15,20,30,45,70,80,90];
+
+	poppedup = list(conversations.find({'meta.createdOn': {'$lt': end , '$gte': start},'company': id_company}))
+
+	res = {}
+	keys = []
+	n=1
+	total = float(len(poppedup))
+	lastPerc = -1
+	for conv in poppedup:
+		user_agent = UAParse(conv['userAgent'])
+
+		remade = user_agent.os.family
+		if 'Windows' in remade:
+			remade = 'Windows'
+
+		if user_agent.is_mobile:
+			remade = 'Mobile / '+remade
+		elif user_agent.is_tablet:
+			remade = 'Tablet / '+remade
+		elif user_agent.is_pc:
+			remade = 'Desktop / '+remade
+		else:
+			remade = 'Other / '+remade
+
+		family = user_agent.browser.family
+		if 'Mobile Safari' in family:
+			family = 'Mobile Safari'
+		remade += ' / '+ family
+
+		# pop
+		if remade in keys:
+			res[remade]['poppedup'] += 1
+		else:
+			res[remade] = {
+				'poppedup': 1,
+				'started':0,
+				'exported':0
+			}
+			for x in range(2,9):
+				res[remade]['lvl'+str(x)] = 0
+			keys.append(remade)
+
+		#start
+		if conv['meta']['isStarted']:
+			res[remade]['started'] += 1
+
+		lvlFound = 0
+		for l in range(0,len(levels)):
+			if conv['meta']['completionLevel'] >= levels[l]:
+				res[remade]['lvl'+str(l+2)] += 1
+				lvlFound = l+2
+			else :
+				continue
+
+		if lvlFound >= 7:
+			#exported - it's here to avoid conversation exported by the sentinel
+			if conv['meta']['exported']:
+				res[remade]['exported'] += 1			
+			
+		perc =  int( (n / total)*100)
+		if perc > lastPerc :
+			print perc, ' %'
+			lastPerc = perc
+		n+=1
+
+
+	volumes = []
+	ratios = []
+
+	for doc in res:
+		perc = (res[doc]['poppedup']/total)*100
+		if perc > 0.5:
+			title = doc + ' (' + "{:2.2f}".format(perc) + " % of volume)"
+
+			line = [title, perc ,res[doc]['poppedup'], res[doc]['started'] ]
+			for x in range(2,9):
+				line.append( res[doc]['lvl'+str(x)] )
+			line.append(res[doc]['exported'])
+			volumes.append(line)
+
+			line = [title, res[doc]['started']/float(res[doc]['poppedup']), res[doc]['lvl2']/float(res[doc]['started']) ]
+			for x in range(3,9):
+				line.append( min( res[doc]['lvl'+str(x)] / float(res[doc]['lvl'+str(x-1)] ), 1 ) )
+			line.append( min(res[doc]['exported'] / float(res[doc]['lvl8'])),1)
+			ratios.append(line)
+
+	return volumes, ratios
+
+def average_conversation_time_by_level(company, start, end) :
+	id_company = getCompanyId(company)
+	levels = [15,20,30,45,70,80,90];
+	timesByLvl = OrderedDict()
+	for x in range(2,9):
+		timesByLvl['Lvl'+str(x)] = []
+
+	convs = conversations.find({'meta.createdOn': {'$lt': end , '$gte': start},'company': id_company})
+	for currConv in convs:
+		datesDict = currConv['meta']['completionDates']
+		if len(datesDict) > 0:
+			for d in datesDict:
+				for l in range(0,7):
+					if d['level'] == levels[l]:
+						diff = d['date'] - currConv['meta']['createdOn']
+						timesByLvl['Lvl'+str(l+2)].append(diff.total_seconds())
+
+	for lvl in timesByLvl:
+		serie = timesByLvl[lvl];
+		currMean = np.mean(serie)
+		currStd = np.std(serie)
+		delta = 1
+
+		timesByLvl[lvl] = [x for x in serie if abs(x-currMean)< (delta*currStd)]
+
+	return timesByLvl
+
+def time_spent_on_questions(company, start, end) :
+	id_company = getCompanyId(company)
+
+	#get all conversations
+	ids_conv = conversations.find({'meta.createdOn': {'$lt': end , '$gte': start},'company': id_company},{'_id':True})
+	conversations_list = []
+	for c in ids_conv:
+		conversations_list.append(c['_id'])
+
+	#get all questions from the conversations set
+	messagesList = messages.find({'conversation':{'$in':conversations_list}, '_dialogue':{'$ne':None}})
+	print '***',messagesList.count()
+
+	for mess in messagesList:
+		answer = messages.find_one({'message':mess['_id']})
+		if answer != None :
+			ansDate = answer['']
 
 
 
+def nps_by_device(company, start, end) : 
+	print 'nps_by_device'
+	id_company = getCompanyId(company)
 
+	ids_conv = conversations.find({'meta.createdOn': {'$lt': end , '$gte': start},'company': id_company},{'_id':True, 'userAgent':True})
+	results = {}
+	totalNb = float(ids_conv.count())
+	n = 0
+	perc = 0
 
+	for conv in ids_conv:
+		#first, is there an associated nps?
+		vote = nps.find_one({'conversation':conv['_id']})
+		if vote:
+			#...if so, analyse userAgent
+			user_agent = UAParse(conv['userAgent'])
+			device = 'Other'
+			if user_agent.is_mobile:
+				device = 'Mobile'
+			elif user_agent.is_tablet:
+				device = 'Tablet'
+			elif user_agent.is_pc:
+				device = 'Desktop'
+
+			if device not in results.keys():
+				results[device] = {
+					'1 stars':0,
+					'2 stars':0,
+					'3 stars':0,
+					'4 stars':0,
+					'5 stars':0
+				}
+			results[device][str(vote['score_value'])+' stars'] += 1
+		x = int((n / totalNb)*100)
+		if x > perc:
+			print str(x)+' %'
+			perc = x
+		n+=1
+
+	return results

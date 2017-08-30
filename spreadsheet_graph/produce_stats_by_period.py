@@ -24,6 +24,8 @@ def evolution_by_period(start, end,function,company,period=None) :
 		temp = start + delta
 		id_conv, ids_company,levels = ids_conv(start,temp,company)
 		element = function(id_conv, ids_company,levels,start,end)
+
+		print function, start, 'OK'
 		
 		if isinstance(element,int) : 
 			percentages.append([element])

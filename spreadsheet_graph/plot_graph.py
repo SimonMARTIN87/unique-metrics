@@ -337,6 +337,31 @@ def create_multiple_lines(folderName, dates, matrix, title) :
 	fig = go.Figure(data=data, layout=layout)
 	py.plot(fig, filename=folderName+'/'+name,sharing='private')	
 
+def create_multiple_perc_lines(folderName, xAxisLabels, linesArray, title):
+	data = []
+	for line in linesArray:
+		line = list(line)
+		lineName = line.pop(0)
+		data.append(go.Scatter(
+			x=xAxisLabels,
+			y= line,
+			mode = 'lines',
+			name = lineName,
+			line = dict(shape='spline')
+			))
+	layout = go.Layout(
+		title=title,
+		yaxis = {
+			'title': '%',
+			'tickformat': ',.0%',
+			'range': [0,1]
+		}
+		)
+	name = title.replace(' ','_')
+	fig = go.Figure(data=data, layout=layout)
+	py.plot(fig, filename=folderName+'/'+name,sharing='private')	
+
+
 def create_group_sessions(folderName,duration,welcomingQuestion,whyMcDonalds,satisfactionQuestion,satisfactionQuestionReply,unhappyClientQuestionReply,dates, title) : 
 	trace1 = go.Bar(
 	    x=dates,
@@ -497,5 +522,16 @@ def create_multiple_bars(folderName, dates, matrix, title):
 	fig = go.Figure(data=data, layout=layout)
 	py.plot(fig, filename=folderName+'/'+name,sharing='private')	
 
+def create_multiple_boxPlot(folderName, lines, title):
+	data = []
+	for line in lines:
+		data.append(go.Box(x=lines[line], name=line, boxpoints = False))
+	layout = go.Layout(
+		title = title,
+		xaxis=dict(title='Seconds', range=[0,1500])
+		)
+	name = title.replace(' ','_')
+	fig = go.Figure(data=data, layout=layout)
+	py.plot(fig, filename=folderName+'/'+name,sharing='private')			
 
 
