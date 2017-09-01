@@ -534,4 +534,35 @@ def create_multiple_boxPlot(folderName, lines, title):
 	fig = go.Figure(data=data, layout=layout)
 	py.plot(fig, filename=folderName+'/'+name,sharing='private')			
 
+def create_sankey(data):
+	data_trace = dict(
+		type='sankey',
+	    domain = dict(
+			x =  [0,1],
+			y =  [0,1]
+		),
+		orientation = "h",
+		valueformat = ".0f",
+		node = dict(
+			pad=15,
+			thickness=15,
+			line=dict(
+				color="black",
+				width=0.5
+			),
+			label =  data['node']['label'],
+			color =  data['node']['color']
+		),
+		link=dict(
+			source = data['link']['source'],
+			target = data['link']['target'],
+			value = data['link']['value'],
+		)
+	)
+	layout = dict(
+		title = 'Ceci est un graph test'
+	)
+	fig = go.Figure(data = [data_trace], layout = layout)
+	py.plot(fig, filename='TEST/Sankey')
+
 

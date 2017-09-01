@@ -6,9 +6,8 @@ from viz import create_graph
 # date_fin = raw_input("Enter date of end ('dd/mm/aaaa'):")
 
 company = 'Macdo'
-date_debut = '15/07/2017'
-date_fin = '22/08/2017'
-#date_fin = '23/08/2017'
+date_debut = '01/07/2017'
+date_fin = '01/09/2017'
 
 create_xlsx(date_debut, date_fin, company)
 

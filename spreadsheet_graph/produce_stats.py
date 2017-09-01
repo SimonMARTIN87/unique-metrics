@@ -6,10 +6,10 @@ import pandas as pd
 from datetime import timedelta, datetime, date
 import numpy as np
 import json
-# from ua_parser import user_agent_parser
+from ua_parser import user_agent_parser
 from user_agents import parse as UAParse
 from collections import OrderedDict
-
+import operator
 
 client = MongoClient()
 db = client.app64723109
@@ -74,19 +74,7 @@ def count_conversations(ids_conv, ids_company, levels,start,end) :
 	return poppedup
 
 def count_level_reached(ids_conv, ids_company, levels,start,end) :
-
-	# poppedup = conversations.find({'_id' : {'$in' : ids_conv}}).count()
-	# started = messages.find({'$and' : [{'conversation' : {'$in' : ids_conv},'_dialogue': {'$in' : levels['0']}}]}).count()
-	# level_1 = messages.find({'$and' : [{'conversation' : {'$in' : ids_conv},'_dialogue': {'$in' : levels['1']}}]}).count()
-	# level_2 = messages.find({'$and' : [{'conversation' : {'$in' : ids_conv},'_dialogue': {'$in' : levels['2']}}]}).count()
-	# level_3 = messages.find({'$and' : [{'conversation' : {'$in' : ids_conv},'_dialogue': {'$in' : levels['3']}}]}).count()
-	# level_4 = messages.find({'$and' : [{'conversation' : {'$in' : ids_conv},'_dialogue': {'$in' : levels['4']}}]}).count()
-	# level_5 = messages.find({'$and' : [{'conversation' : {'$in' : ids_conv},'_dialogue': {'$in' : levels['5']}}]}).count()
-	# level_6 = messages.find({'$and' : [{'conversation' : {'$in' : ids_conv},'_dialogue': {'$in' : levels['6']}}]}).count()
-	# level_7 = messages.find({'$and' : [{'conversation' : {'$in' : ids_conv},'_dialogue': {'$in' : levels['7']}}]})
-	# level_8 = messages.find({'$and' : [{'conversation' : {'$in' : ids_conv},'_dialogue': {'$in' : levels['8']}}]}).count()
 	levels = [15,20,30,45,70,80,90];
-
 	poppedup = len(ids_conv)
 	started = conversations.count({'_id':{'$in':ids_conv}, 'meta.isStarted':True})
 	level_1 = started
@@ -101,7 +89,8 @@ def count_level_reached(ids_conv, ids_company, levels,start,end) :
 	exported = 0
 
 	for l in level_7 :
-		exported += candidates.find({'_id' : l['candidate'] ,'files.cv' : {'$ne': None }}).count()
+		if l['meta']['exported']:
+			exported += 1
 
 	return [poppedup,started, level_1, level_2, level_3, level_4,level_5,level_6,level_7.count(),level_8,exported]
 
@@ -119,8 +108,8 @@ def nps_by_time(ids_conv, ids_company, levels,start,end) :
 ### Sentinel
 def sentinel_level(ids_conv, ids_company, levels, start, end) : 
 	
-	send_cv = events.find({'$and' : [{'conversation' : {'$in' : ids_conv}, 'createdOn':{'$lt' : end, '$gt' :start}, 'eventType' : 'sendEmail', 'eventSubType' : 'for CV'}]}).count()
-	opened_cv = events.find({'$and' : [{'conversation' : {'$in' : ids_conv},'createdOn':{'$lt' : end, '$gt' :start}, 'eventType' : 'openedEmail', 'eventSubType' : 'for CV'}]}).count()
+	send_cv = events.find({'$and' : [{'conversation' : {'$in' : ids_conv}, 'createdOn':{'$lt' : end, '$gt' :start}, 'eventType' : 'sendMail', 'eventSubType' : 'forCV'}]}).count()
+	opened_cv = events.find({'$and' : [{'conversation' : {'$in' : ids_conv},'createdOn':{'$lt' : end, '$gt' :start}, 'eventType' : 'openMail', 'eventSubType' : 'forCV'}]}).count()
 	upload_cv = events.find({'$and' : [{'conversation' : {'$in' : ids_conv},'createdOn':{'$lt' : end, '$gt' :start}, 'eventType' : 'upload'}]}).count()
 	export_cv = events.find({'$and' : [{'conversation' : {'$in' : ids_conv},'createdOn':{'$lt' : end, '$gt' :start}, 'eventType' : 'export'}]}).count()
 	reminder1 = events.find({'$and' : [{'conversation' : {'$in' : ids_conv},'createdOn':{'$lt' : end, '$gt' :start}, 'eventSubType' : 'reminder1'}]}).count()
@@ -178,7 +167,13 @@ def which_return(ids_conv, ids_company, levels,start, end) :
 	returned_on_J2 = [0]*6
 	returned_on_J3 = [0]*6
 
-	for event in events.find({'$and' : [{'eventType' : 'recover', "createdOn" : {'$lt' : end, '$gt' : start}}]}) :
+	listEvents = events.find({'$and' : [{'eventType' : 'recover', "createdOn" : {'$lt' : end, '$gt' : start}}]})
+	totalNb = str(listEvents.count())
+	n=1
+	print "which_return"
+	for event in listEvents:
+		print str(n)+' / '+totalNb
+		n += 1
 		id_conv = event.get('conversation')
 		if id_conv in ids_conv :
 			date_event = event.get('createdOn')
@@ -212,47 +207,38 @@ def which_return(ids_conv, ids_company, levels,start, end) :
 ### Information by browser
 def conv_by_browser(ids_conv, ids_company, levels, start, end) :
 
-	dico_conv_id = {'desktop' : [],'mobile' : [], 'tablet' : []}
-	dico_can_id = {'desktop' : [],'mobile' : [], 'tablet' : []}
+	dico_conv_id = {'Desktop' : [],'Mobile' : [], 'Tablet' : []}
 	dico_percentage = {}
 	dico_nps = {}
 	dico_sentinel = {}
 
-	for conv in conversations.find({'_id' : {'$in' : ids_conv}}) :
-		useragent = conv.get('userAgent')
-		browser = user_agent_parser.ParseUserAgent(useragent).get('family')
-		device_temp = user_agent_parser.ParseDevice(useragent).get('family')
+	listConvs = conversations.find({'_id' : {'$in' : ids_conv}})
+	totalNb = listConvs.count()
+	n=1
+	for conv in  listConvs:
+		print n, ' / ', totalNb
+		n+=1
+		user_agent = UAParse(conv['userAgent'])
 
-		if device_temp == 'Other' and 'Mobile' not in browser:
-			dico_conv_id['desktop'].append(conv.get('_id'))
-			dico_can_id['desktop'].append(conv.get('candidate'))
-		if 'Mobile' not in browser and device_temp != 'Other' :
-			dico_conv_id['tablet'].append(conv.get('_id'))
-			dico_can_id['tablet'].append(conv.get('candidate'))
-		if 'Mobile' in browser :
-			dico_conv_id['mobile'].append(conv.get('_id'))
-			dico_can_id['mobile'].append(conv.get('candidate'))
-
-
-	dico_conv_id['mobile'] = list(set(dico_conv_id['mobile']))
-	dico_can_id['mobile'] = list(set(dico_can_id['mobile']))
-	dico_conv_id['desktop'] = list(set(dico_conv_id['desktop']))
-	dico_can_id['desktop'] = list(set(dico_can_id['desktop']))
-	dico_conv_id['tablet'] = list(set(dico_conv_id['desktop']))
-	dico_can_id['tablet'] = list(set(dico_can_id['tablet']))
-
+		if user_agent.is_mobile:
+			dico_conv_id['Mobile'].append(conv.get('_id'))
+		elif user_agent.is_tablet:
+			dico_conv_id['Tablet'].append(conv.get('_id'))
+		else:
+			dico_conv_id['Desktop'].append(conv.get('_id'))
+	
+	levels = [15,20,30,45,70,80,90];
 	for key in dico_conv_id.keys() :
-
-		started = messages.find({'$and' : [{'conversation' : {'$in' : dico_conv_id[key]} ,'_dialogue': {'$in' : levels['0']}}]}).count()
-		level_1 = messages.find({'$and' : [{'conversation' : {'$in' : dico_conv_id[key]} ,'_dialogue': {'$in' : levels['1']}}]}).count()
-		level_2 = messages.find({'$and' : [{'conversation' : {'$in' : dico_conv_id[key]} ,'_dialogue': {'$in' : levels['2']}}]}).count()
-		level_3 = messages.find({'$and' : [{'conversation' : {'$in' : dico_conv_id[key]} ,'_dialogue': {'$in' : levels['3']}}]}).count()
-		level_4 = messages.find({'$and' : [{'conversation' : {'$in' : dico_conv_id[key]} ,'_dialogue': {'$in' : levels['4']}}]}).count()
-		level_5 = messages.find({'$and' : [{'conversation' : {'$in' : dico_conv_id[key]} ,'_dialogue': {'$in' : levels['5']}}]}).count()
-		level_6 = messages.find({'$and' : [{'conversation' : {'$in' : dico_conv_id[key]} ,'_dialogue': {'$in' : levels['6']}}]}).count()
-		level_7 = messages.find({'$and' : [{'conversation' : {'$in' : dico_conv_id[key]} ,'_dialogue': {'$in' : levels['7']}}]}).count()
-		level_8 = messages.find({'$and' : [{'conversation' : {'$in' : dico_conv_id[key]} ,'_dialogue': {'$in' : levels['8']}}]}).count()
-		exported = candidates.find({'$and' : [{'_id': {'$in' : dico_can_id[key]},'files.cv' : {'$ne': None }}]}).count()
+		started = conversations.count({'_id':{'$in':dico_conv_id[key]}, 'meta.isStarted':True})
+		level_1 = conversations.count({'_id':{'$in':dico_conv_id[key]}, 'meta.completionLevel':{'$gt':0}})
+		level_2 = conversations.count({'_id':{'$in':dico_conv_id[key]}, 'meta.completionLevel':{'$gte':15}})
+		level_3 = conversations.count({'_id':{'$in':dico_conv_id[key]}, 'meta.completionLevel':{'$gte':20}})
+		level_4 = conversations.count({'_id':{'$in':dico_conv_id[key]}, 'meta.completionLevel':{'$gte':30}})
+		level_5 = conversations.count({'_id':{'$in':dico_conv_id[key]}, 'meta.completionLevel':{'$gte':45}})
+		level_6 = conversations.count({'_id':{'$in':dico_conv_id[key]}, 'meta.completionLevel':{'$gte':70}})
+		level_7 = conversations.count({'_id':{'$in':dico_conv_id[key]}, 'meta.completionLevel':{'$gte':80}})
+		level_8 = conversations.count({'_id':{'$in':dico_conv_id[key]}, 'meta.completionLevel':{'$gte':90}})
+		exported = conversations.count({'_id':{'$in':dico_conv_id[key]}, 'meta.exported':True})
 
 		## nps
 		one = nps.find({'$and' : [{'conversation' : {'$in': dico_conv_id[key]},'score_value' : 1}]}).count()
@@ -274,7 +260,7 @@ def conv_by_browser(ids_conv, ids_company, levels, start, end) :
 
 
 		### conversion level
-		dico_percentage[key] = [len(dico_conv_id[key]),started,level_1, level_2, level_3, level_4, level_5, level_6, level_7, level_8,exported]
+		dico_percentage[key] = [len(dico_conv_id[key]),started,level_1, level_2, level_3, level_4, level_5, level_6, level_7, exported, level_8]
 
 		### nps
 		dico_nps[key] = [one,two,three,four,five]
@@ -282,7 +268,7 @@ def conv_by_browser(ids_conv, ids_company, levels, start, end) :
 		## sentinel
 		dico_sentinel[key] = [send_cv,opened_cv,upload_cv,export_cv,reminder1,reminder2,reminder3,returned,recover]
 
-	dico_percentage['indexes'] = ['PoppedUp','Started', 'level 1', 'level 2', 'level 3', 'level 4','level 5','level 6','level 7','level 8','Exported']
+	dico_percentage['indexes'] = ['PoppedUp','Started', 'level 1', 'level 2', 'level 3', 'level 4','level 5','level 6','level 7','Exported','level 8']
 	dico_nps['indexes'] = ['1 star', '2 stars', '3 stars', '4 stars','5 stars']
 	dico_sentinel['indexes'] = ['send_cv','opened_cv','upload','export','reminder1','reminder2','reminder3','return','recover']
 	
@@ -506,7 +492,6 @@ def candidats_unique_exported(company, start, end) :
 
 	return res, freq
 
-
 def average_conversion_by_UA(company, start, end):
 	id_company = getCompanyId(company)
 
@@ -580,22 +565,60 @@ def average_conversion_by_UA(company, start, end):
 	volumes = []
 	ratios = []
 
-	for doc in res:
-		perc = (res[doc]['poppedup']/total)*100
-		if perc > 0.5:
-			title = doc + ' (' + "{:2.2f}".format(perc) + " % of volume)"
+	#keep only the 5 major ones
+	percOfVolume = {}
+	for doc in keys:
+		percOfVolume[doc] = (res[doc]['poppedup']/total)*100
 
-			line = [title, perc ,res[doc]['poppedup'], res[doc]['started'] ]
-			for x in range(2,9):
-				line.append( res[doc]['lvl'+str(x)] )
-			line.append(res[doc]['exported'])
-			volumes.append(line)
+	sortedPerc = sorted(percOfVolume.items(), key=operator.itemgetter(1))
+	sortedPerc.reverse()
+	sortedPerc = sortedPerc[:5]
 
-			line = [title, res[doc]['started']/float(res[doc]['poppedup']), res[doc]['lvl2']/float(res[doc]['started']) ]
-			for x in range(3,9):
+	#remove sorted from dict
+	totalPerc = 0
+	for (doc,p) in sortedPerc:
+		percOfVolume.pop(doc)
+		totalPerc += p
+	#group others
+	others = {}
+	for doc in percOfVolume.keys():
+		for k in res[doc].keys():
+			if k in others.keys():
+				others[k] += res[doc][k]
+			else:
+				others[k] = res[doc][k]
+	sortedPerc.append(('others',100 - totalPerc))
+
+	print sortedPerc
+	res['others'] = others
+
+
+	for (doc,p) in sortedPerc:
+		title = doc + ' (' + "{:2.2f}".format(p) + " % of volume)"
+
+		line = [title, p ,res[doc]['poppedup'], res[doc]['started'] ]
+		for x in range(2,9):
+			line.append( res[doc]['lvl'+str(x)] )
+		line.append(res[doc]['exported'])
+		volumes.append(line)
+
+		staOnPop = 0
+		l2OnSta = 0
+		if res[doc]['poppedup'] > 0:
+			staOnPop = res[doc]['started']/float(res[doc]['poppedup'])
+		if res[doc]['started'] > 0:
+			l2OnSta = res[doc]['lvl2']/float(res[doc]['started'])
+		line = [title, staOnPop , l2OnSta ]
+		for x in range(3,8):
+			if res[doc]['lvl'+str(x-1)] > 0:
 				line.append( min( res[doc]['lvl'+str(x)] / float(res[doc]['lvl'+str(x-1)] ), 1 ) )
-			line.append( min(res[doc]['exported'] / float(res[doc]['lvl8'])),1)
-			ratios.append(line)
+			else:
+				line.append(0)
+		if res[doc]['lvl7'] > 0:
+			line.append( min(res[doc]['exported'] / float(res[doc]['lvl7']),1))
+		else:
+			line.append(0)
+		ratios.append(line)
 
 	return volumes, ratios
 
@@ -644,8 +667,6 @@ def time_spent_on_questions(company, start, end) :
 		if answer != None :
 			ansDate = answer['']
 
-
-
 def nps_by_device(company, start, end) : 
 	print 'nps_by_device'
 	id_company = getCompanyId(company)
@@ -686,3 +707,5 @@ def nps_by_device(company, start, end) :
 		n+=1
 
 	return results
+
+

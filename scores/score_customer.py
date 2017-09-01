@@ -8,19 +8,25 @@ from datetime import timedelta, datetime, date
 from pprint import pprint
 from sklearn import linear_model
 from sklearn import preprocessing
-from sklearn.feature_selection import SelectKBest , f_regression
-from ua_parser import user_agent_parser
+import sklearn.feature_selection as FS
+#from ua_parser import user_agent_parser
+from user_agents import parse as UAParse
+import re
 
 
 ### MongoDB
 client = MongoClient()
-db = client.test2
+db = client.app64723109
 
 conversations = db['conversations']
 messages = db['messages']
 dialogues = db['_dialogues']
 events = db['events']
 nps = db['nps']
+sessions = db['sessions']
+
+
+# Badly Recompute the score...
 def customer_score(company,start,end) :
 	if company == 'Macdo' :
 		ids_company = ObjectId("58d12d7c9dab1c0004485209")
@@ -38,10 +44,14 @@ def customer_score(company,start,end) :
 	start = datetime.strptime(start, '%d/%m/%Y')
 	end = datetime.strptime(end, '%d/%m/%Y')
 
-	all_conversations = conversations.find({'score' : {'$gt' : 0 },'meta.createdOn': {'$lt': end , '$gte': start},'company' : ids_company})
+	all_conversations = conversations.find({'meta.completionLevel':{'$gte':80},'meta.createdOn': {'$lt': end , '$gte': start},'company' : ids_company})
+	totalLen = all_conversations.count()
+	n=1
 	scores_unique = []
 	score_costumers = []
 	for conversation in all_conversations :
+		print n, ' / ', totalLen
+		n+=1
 		id_conv = conversation.get('_id')
 		scores_unique.append(conversation.get('score'))
 		all_messages = messages.find({'conversation' : id_conv})
@@ -59,9 +69,11 @@ def customer_score(company,start,end) :
 	scores = [[scores_unique[i],score_costumers[i]] for i in range(len(scores_unique))]
 	return scores
 
-
-df = pd.DataFrame(customer_score('Macdo','1/4/2017','1/7/2017'), columns=['score unique.ai ', 'score costumer methode'])
-df.to_csv('score_comparisons.csv',sep=';')
+# print "building tabScore..."
+# tabScore = customer_score('Macdo','1/7/2017','20/7/2017')
+# print "==>OK"
+# df = pd.DataFrame(tabScore, columns=['score unique.ai ', 'score costumer methode'])
+# df.to_csv('score_comparisons.csv',sep=';')
 
 
 def correlation_nps_score_device(company,start,end) :
@@ -78,46 +90,82 @@ def correlation_nps_score_device(company,start,end) :
 	correl = []
 	y = []
 	x = []
-	for conversation in conversations.find({'company' : ids_company,'meta.completedOn' : {'$ne' : None}}) :
+	all_conversations = conversations.find({'company' : ids_company,'meta.exported' : True})
+	totalLen = all_conversations.count()
+	n=1
+	sourceReg = re.compile('"origin":"([^\"]+)"')
+
+	for conversation in all_conversations:
+		print n, ' / ', totalLen
+		n+=1
 		score = conversation.get('score')
 		date_start = conversation.get('meta').get('createdOn')
-		date_end = conversation.get('meta').get('completedOn')
+		date_end = conversation.get('meta').get('lastMessageOn')
 		duration = (date_end - date_start).seconds
 
 		day = int(date_start.weekday())
 		time = int(str(date_start.time())[:2])
 		id_conv = conversation.get('_id')
-		source = None
-		# if conversation.get('refData') is not None : 
-		# 	source = conversation.get('refData')
 
-		useragent = conversation.get('userAgent')
-		browser = user_agent_parser.ParseUserAgent(useragent).get('family')
-		device_temp = user_agent_parser.ParseDevice(useragent).get('family')
+		#sourcing
+		origin = 'website'
+		refData = conversation.get('refData')
+		if refData is not None:
+			groups = sourceReg.findall(refData)
 
-		if device_temp == 'Other' and 'Mobile' not in browser:
-			device = 'Desktop'
-		if 'Mobile' not in browser and device_temp != 'Other' :
-			device = 'Tablet'
-		if 'Mobile' in browser :
+			if len(groups) > 0:
+				origin = groups[0]
+				parts = origin.split('.')
+				if len(parts) >= 2 :
+					origin = parts[len(parts) - 2]
+					if origin in ['co','com']:
+						origin = parts[len(parts) - 3]
+		# UA
+		user_agent = UAParse(conversation.get('userAgent'))
+
+		device = 'Desktop'
+		if user_agent.is_mobile:
 			device = 'Mobile'
-		
-		returned = events.find({'conversation' : id_conv,'eventType' : 'return'}).count()
-		reminder = events.find({'conversation' : id_conv,'eventSubType': {'$in' : ['reminder1','reminder2','reminder3']}}).count()
+		elif user_agent.is_tablet:
+			device = 'Tablet'
 
-		if nps.find_one({'conversation' : id_conv}) is not None : 
-			np = int(nps.find_one({'conversation' : id_conv}).get('score_value'))
+		browser = user_agent.browser.family
+		if 'Mobile Safari' in browser:
+			browser = 'Mobile Safari'
+		
+		osys = user_agent.os.family
+		if 'Windows' in osys:
+			osys = 'Windows'
+
+		#sessions
+		nbsessions = sessions.count({'conversation': id_conv })
+		
+		# sentinel??
+		# returned = events.find({'conversation' : id_conv,'eventType' : 'return'}).count()
+		# reminder = events.find({'conversation' : id_conv,'eventSubType': {'$in' : ['reminder1','reminder2','reminder3']}}).count()
+
+		currNps = nps.find_one({'conversation' : id_conv})
+		if currNps is not None : 
+			np = currNps.get('score_value')
 		else :
 			np = -1
-		
-		correl.append([score,day,source,time,np,duration,device, browser, returned,reminder])
+
+		#location
+		location = conversation.get('preferedLocation')
+		if location is None:
+			location = 'None'
+
+		correl.append([score,day,origin,time,np,duration,device,osys,browser, nbsessions, location.encode('utf-8')])
 
 	return correl
 
-correl = correlation_nps_score_device('Macdo','1/4/2017','1/7/2017')
+# print 'build correlation CSV...'
+# correl = correlation_nps_score_device('Macdo','1/7/2017','1/8/2017')
 
-df = pd.DataFrame(correl, columns=['score', 'day','source','time','nps','duration','device', 'browser', 'returned','reminder'])
-df.to_csv('correlation.csv',sep=';')
+# df = pd.DataFrame(correl, columns=['score','day','origin','time','np','duration','device','osys','browser', 'nbsessions','location'])
+# df.to_csv('correlation.csv',sep=';')
+
+# print '=>Done'
 
 
 #### GET CORRELATION ####
@@ -126,22 +174,39 @@ def columns_to_index(columns) :
 	columns_index = [columns_unique.index(element) for element in columns]
 	return columns_index
 ##load file
-correl = pd.read_csv('correlation.csv',sep=';',names=['score', 'day','source','time','nps','duration','device','browser','returned','reminder'], header=1)
+correl = pd.read_csv('correlation.csv',sep=';',names=['score','day','origin','time','np','duration','device','osys','browser', 'nbsessions','location'], header=1)
 
 ## score & features
 y = correl['score'].values.tolist()
-del correl['source']
-del correl['reminder']
 correl['device'] = columns_to_index(correl['device'])
 correl['browser'] = columns_to_index(correl['browser'])
+correl['osys'] = columns_to_index(correl['osys'])
+correl['origin'] = columns_to_index(correl['origin'])
+correl['location'] = columns_to_index(correl['location'])
 x = preprocessing.scale(correl.as_matrix()[:, 1:])  ## center features
 
-## Show which features impact the most the score
-selection = SelectKBest(f_regression,k=6).fit(x,y)
-print selection.scores_
+# Show which features impact the most the score
+featSelection = []
+selection = FS.SelectKBest(FS.f_regression,k=6).fit(x,y)
+featSelection.append(['f_regression']+list(selection.scores_))
 
-## Coeff in the calculation of the score
-regr = linear_model.LinearRegression(normalize=True,fit_intercept = False)
-regr.fit(x,y)
+selection = FS.SelectKBest(FS.f_classif, k=6).fit(x,y)
+featSelection.append(['f_classif']+list(selection.scores_))
 
-print 'Coeff of [day,time,nps,duration,device,returned]', regr.coef_
+selection = FS.SelectKBest(FS.mutual_info_classif, k=6).fit(x,y)
+featSelection.append(['mutual_info_classif']+list(selection.scores_))
+
+selection = FS.SelectKBest(FS.mutual_info_regression, k=6).fit(x,y)
+featSelection.append(['mutual_info_regression']+list(selection.scores_))
+
+df = pd.DataFrame(featSelection, columns=['func','day','origin','time','np','duration','device','osys','browser', 'nbsessions','location'])
+df.to_csv('feature_selection.csv', sep=';')
+
+# Coeff in the calculation of the score
+regr = linear_model.LinearRegression(normalize=True,fit_intercept = True)
+
+for col in ['score','day','origin','time','np','duration','device','osys','browser', 'nbsessions','location']:
+	x = preprocessing.scale(correl.as_matrix(columns=[col]))
+	regr.fit(x,y)
+	print col," => ","{:1.10f}".format(regr.score(x, y))
+
