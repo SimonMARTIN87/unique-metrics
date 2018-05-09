@@ -12,6 +12,7 @@ import sklearn.feature_selection as FS
 #from ua_parser import user_agent_parser
 from user_agents import parse as UAParse
 import re
+import sys
 
 
 ### MongoDB
@@ -19,6 +20,7 @@ client = MongoClient()
 db = client.app64723109
 
 conversations = db['conversations']
+candidates = db['candidates']
 messages = db['messages']
 dialogues = db['_dialogues']
 events = db['events']
@@ -44,36 +46,69 @@ def customer_score(company,start,end) :
 	start = datetime.strptime(start, '%d/%m/%Y')
 	end = datetime.strptime(end, '%d/%m/%Y')
 
-	all_conversations = conversations.find({'meta.completionLevel':{'$gte':80},'meta.createdOn': {'$lt': end , '$gte': start},'company' : ids_company})
+	all_conversations = conversations.find({'meta.exported':True,'meta.createdOn': {'$lt': end , '$gte': start},'company' : ids_company})
 	totalLen = all_conversations.count()
 	n=1
-	scores_unique = []
-	score_costumers = []
+	res = []
+	print '/',totalLen
 	for conversation in all_conversations :
-		print n, ' / ', totalLen
+		sys.stdout.write("\r"+str(n))
+		sys.stdout.flush()
 		n+=1
+
 		id_conv = conversation.get('_id')
-		scores_unique.append(conversation.get('score'))
-		all_messages = messages.find({'conversation' : id_conv})
+		currCandidate = candidates.find_one({'_id': conversation['candidate']})
+		line = {
+			'Nom': currCandidate['name']['last'],
+			'Prenom': currCandidate['name']['first'],
+			'Email': currCandidate['contact']['email'],
+			'Score': conversation['score']
+		}
+
+		questions = messages.find({'conversation' : id_conv, 'message':None})
+		listD = []
+		for q in questions:
+			listD.append(q['_dialogue'])
+		dials = dialogues.find({'_id': {'$in':listD} })
+		listScript = set()
+		for d in dials:
+			listScript.add(d['script'])
+
+		listScript = list(listScript)
+		reponses = messages.find({'conversation' : id_conv, 'message':{'$ne':None}, 'atsValueName': {'$ne':'listeSup6'} })
 		score_temp = 0
-		score_temp2 = 0
-		for m in all_messages :
+		listPayload = set()
+		for m in reponses :
 			payload = m.get('payload')
-			if payload is not None and payload != u"" :
-				d = dialogues.find_one({'continueRef' : payload, 'script' : {'$in' : scripts}})
-				if d is not None : 
-					score_temp += d.get(u'score')
+			if ',' in payload:
+				payload = payload.split(',')
+				listPayload |= set(payload)
+			else:
+				listPayload.add(payload)
 
-		score_costumers.append(score_temp)
+		listPayload = list(listPayload)
+		for pl in listPayload:
+			if pl is not None and pl != u"":
+				maxScore = 0
+				dL = dialogues.find({'continueRef' : pl, 'script': {'$in':listScript} })
+				for d in dL:
+					if d['score'] > maxScore:
+						maxScore = d['score']
+				score_temp += maxScore
+				
 
-	scores = [[scores_unique[i],score_costumers[i]] for i in range(len(scores_unique))]
-	return scores
+		line['newScore'] = score_temp
+		res.append(line)
 
-# print "building tabScore..."
-# tabScore = customer_score('Macdo','1/7/2017','20/7/2017')
-# print "==>OK"
-# df = pd.DataFrame(tabScore, columns=['score unique.ai ', 'score costumer methode'])
-# df.to_csv('score_comparisons.csv',sep=';')
+	return res
+
+print "building tabScore..."
+tabScore = customer_score('Macdo','1/8/2017','31/8/2017')
+print "==>OK"
+df = pd.DataFrame(tabScore, columns=['Nom','Prenom','Email','Score','newScore'])
+writer = pd.ExcelWriter('nouveau_score.xlsx')
+df.to_excel(writer,sheet_name='score sans dispo')
+writer.save()
 
 
 def correlation_nps_score_device(company,start,end) :
@@ -174,39 +209,39 @@ def columns_to_index(columns) :
 	columns_index = [columns_unique.index(element) for element in columns]
 	return columns_index
 ##load file
-correl = pd.read_csv('correlation.csv',sep=';',names=['score','day','origin','time','np','duration','device','osys','browser', 'nbsessions','location'], header=1)
+# correl = pd.read_csv('correlation.csv',sep=';',names=['score','day','origin','time','np','duration','device','osys','browser', 'nbsessions','location'], header=1)
 
-## score & features
-y = correl['score'].values.tolist()
-correl['device'] = columns_to_index(correl['device'])
-correl['browser'] = columns_to_index(correl['browser'])
-correl['osys'] = columns_to_index(correl['osys'])
-correl['origin'] = columns_to_index(correl['origin'])
-correl['location'] = columns_to_index(correl['location'])
-x = preprocessing.scale(correl.as_matrix()[:, 1:])  ## center features
+# ## score & features
+# y = correl['score'].values.tolist()
+# correl['device'] = columns_to_index(correl['device'])
+# correl['browser'] = columns_to_index(correl['browser'])
+# correl['osys'] = columns_to_index(correl['osys'])
+# correl['origin'] = columns_to_index(correl['origin'])
+# correl['location'] = columns_to_index(correl['location'])
+# x = preprocessing.scale(correl.as_matrix()[:, 1:])  ## center features
 
-# Show which features impact the most the score
-featSelection = []
-selection = FS.SelectKBest(FS.f_regression,k=6).fit(x,y)
-featSelection.append(['f_regression']+list(selection.scores_))
+# # Show which features impact the most the score
+# featSelection = []
+# selection = FS.SelectKBest(FS.f_regression,k=6).fit(x,y)
+# featSelection.append(['f_regression']+list(selection.scores_))
 
-selection = FS.SelectKBest(FS.f_classif, k=6).fit(x,y)
-featSelection.append(['f_classif']+list(selection.scores_))
+# selection = FS.SelectKBest(FS.f_classif, k=6).fit(x,y)
+# featSelection.append(['f_classif']+list(selection.scores_))
 
-selection = FS.SelectKBest(FS.mutual_info_classif, k=6).fit(x,y)
-featSelection.append(['mutual_info_classif']+list(selection.scores_))
+# selection = FS.SelectKBest(FS.mutual_info_classif, k=6).fit(x,y)
+# featSelection.append(['mutual_info_classif']+list(selection.scores_))
 
-selection = FS.SelectKBest(FS.mutual_info_regression, k=6).fit(x,y)
-featSelection.append(['mutual_info_regression']+list(selection.scores_))
+# selection = FS.SelectKBest(FS.mutual_info_regression, k=6).fit(x,y)
+# featSelection.append(['mutual_info_regression']+list(selection.scores_))
 
-df = pd.DataFrame(featSelection, columns=['func','day','origin','time','np','duration','device','osys','browser', 'nbsessions','location'])
-df.to_csv('feature_selection.csv', sep=';')
+# df = pd.DataFrame(featSelection, columns=['func','day','origin','time','np','duration','device','osys','browser', 'nbsessions','location'])
+# df.to_csv('feature_selection.csv', sep=';')
 
-# Coeff in the calculation of the score
-regr = linear_model.LinearRegression(normalize=True,fit_intercept = True)
+# # Coeff in the calculation of the score
+# regr = linear_model.LinearRegression(normalize=True,fit_intercept = True)
 
-for col in ['score','day','origin','time','np','duration','device','osys','browser', 'nbsessions','location']:
-	x = preprocessing.scale(correl.as_matrix(columns=[col]))
-	regr.fit(x,y)
-	print col," => ","{:1.10f}".format(regr.score(x, y))
+# for col in ['score','day','origin','time','np','duration','device','osys','browser', 'nbsessions','location']:
+# 	x = preprocessing.scale(correl.as_matrix(columns=[col]))
+# 	regr.fit(x,y)
+# 	print col," => ","{:1.10f}".format(regr.score(x, y))
 

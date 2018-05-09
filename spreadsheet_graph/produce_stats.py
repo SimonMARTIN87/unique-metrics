@@ -10,9 +10,11 @@ from ua_parser import user_agent_parser
 from user_agents import parse as UAParse
 from collections import OrderedDict
 import operator
+import re
+import logging
 
 client = MongoClient()
-db = client.app64723109
+db = client.heroku_r9gxmdvq
 
 ## Levels for Macdo and Jamba
 with open('levels_macdo.json','r') as df :
@@ -46,20 +48,49 @@ def getCompanyId(company):
 		return ObjectId('591996f98a37080004bdbdda')
 	if company == 'Halal' :
 		return ObjectId('591d0580161f480004e6501a')
+		
+	if company == 'McDo-Bessin': 
+		return ObjectId('593663c5c14afd00040e3e11')
+	if company == 'McDo-Bordeaux': 
+		return ObjectId('596e45882a581c0004936b8f')
+	if company == 'McDo-Pontarlier': 
+		return ObjectId('596e38ee2a581c0004936b03')
+	if company == 'McDo-Limoges': 
+		return ObjectId('59366ce4c14afd00040e3e9c')
+	if company == 'McDo-Yvelines': 
+		return ObjectId('59ba478a50af8700040879d9')
+	if company == 'McDo-Marseille': 
+		return ObjectId('596e08f22a581c00049368e0')
+	if company == 'McDo-Nord Isere':  
+		return ObjectId('596e33fb2a581c0004936a77')
+	if company == 'McDo-Alpes-de-Haute-Provence':  
+		return ObjectId('59b7a1f762fb42000494d183')
+	if company == 'McDo-Magny': 
+		return ObjectId('596f5cce97a38d000405e0d0')
+	if company == 'McDo-Beaujolais': 
+		return ObjectId('5a44d76c0d61950004f57337')
+
+	if company == 'McDo-ALLFranchises':
+		return {
+			'$in': [
+				ObjectId('593663c5c14afd00040e3e11'),
+				ObjectId('596e45882a581c0004936b8f'),
+				ObjectId('596e38ee2a581c0004936b03'),
+				ObjectId('59366ce4c14afd00040e3e9c'),
+				ObjectId('59ba478a50af8700040879d9'),
+				ObjectId('596e08f22a581c00049368e0'),
+				ObjectId('596e33fb2a581c0004936a77'),
+				ObjectId('59b7a1f762fb42000494d183'),
+				ObjectId('596f5cce97a38d000405e0d0')
+			]
+		}
+	
 	return None
 
 ### Percentage completion level
 def ids_conv(start,end, company) :
-	if company == 'Macdo' :
-		ids_company = ObjectId("58d12d7c9dab1c0004485209")
-		levels = levels_m
-
-	if company == 'Jamba' :
-		ids_company = ObjectId('591996f98a37080004bdbdda')
-		levels = levels_j
-	if company == 'Halal' :
-		ids_company = ObjectId('591d0580161f480004e6501a')
-		levels = levels_h
+	levels = []
+	ids_company = getCompanyId(company);
 
 	ids_conv = []
 	all_conversations = conversations.find({'meta.createdOn': {'$lt': end , '$gte': start},'company': ids_company})
@@ -107,6 +138,8 @@ def nps_by_time(ids_conv, ids_company, levels,start,end) :
 
 ### Sentinel
 def sentinel_level(ids_conv, ids_company, levels, start, end) : 
+
+	##CAN BE REMADE WITH ONE CALL ONLY (?)
 	
 	send_cv = events.find({'$and' : [{'conversation' : {'$in' : ids_conv}, 'createdOn':{'$lt' : end, '$gt' :start}, 'eventType' : 'sendMail', 'eventSubType' : 'forCV'}]}).count()
 	opened_cv = events.find({'$and' : [{'conversation' : {'$in' : ids_conv},'createdOn':{'$lt' : end, '$gt' :start}, 'eventType' : 'openMail', 'eventSubType' : 'forCV'}]}).count()
@@ -171,8 +204,10 @@ def which_return(ids_conv, ids_company, levels,start, end) :
 	totalNb = str(listEvents.count())
 	n=1
 	print "which_return"
+	logging.info("which_return")
 	for event in listEvents:
 		print str(n)+' / '+totalNb
+		logging.info('%s on %s',n,totalNb)
 		n += 1
 		id_conv = event.get('conversation')
 		if id_conv in ids_conv :
@@ -351,7 +386,6 @@ def convs_by_source(ids_conv, ids_company, levels, start, end) :
  		finalResult.append(doc);
  	return finalResult;
 
-
 def lvl7_by_source(ids_conv, ids_company, levels, start, end) :
 	results = conversations.map_reduce(source_mapper, source_reducer, "my_res", query = {'_id':{'$in': ids_conv}, 'meta.completionLevel':{'$gte':80}} )
 	finalResult = [];
@@ -379,7 +413,84 @@ def exported_by_device(ids_conv, ids_company, levels, start, end) :
 	finalResult = [];
  	for doc in results.find():
  		finalResult.append(doc);
- 	return finalResult;
+ 	return finalResult
+
+def levels_by_source(company, start, end) :
+ 	id_comp = getCompanyId(company)
+ 	res = {}
+ 	total = 0
+ 	poppedUp = conversations.map_reduce(source_mapper, source_reducer, "my_res", query= {'meta.createdOn': {'$lt': end , '$gte': start}, 'company':id_comp} ).find()
+ 	for doc in poppedUp:
+ 		res[doc[u"_id"]] = {
+ 			'PoppedUp': doc[u"value"]
+ 		}
+ 		total += doc[u"value"]
+ 	started = conversations.map_reduce(source_mapper, source_reducer, "my_res", query= {'meta.createdOn': {'$lt': end , '$gte': start}, 'company':id_comp, 'meta.isStarted':True} ).find()
+ 	for doc in started:
+ 		res[doc[u"_id"]]['Started'] = doc[u"value"]
+ 	lvl1 = conversations.map_reduce(source_mapper, source_reducer, "my_res", query= {'meta.createdOn': {'$lt': end , '$gte': start}, 'company':id_comp, 'meta.completionLevel':{'$gt':0} } ).find()
+ 	for doc in lvl1:
+ 		res[doc[u"_id"]]['Lvl1'] = doc[u"value"]
+
+ 	levels = [15,20,30,45,70,80,90];
+ 	for x in range(2,9):
+ 		table = conversations.map_reduce(source_mapper, source_reducer, "my_res", query= {'meta.createdOn': {'$lt': end , '$gte': start}, 'company':id_comp, 'meta.completionLevel':{'$gte':levels[x-2]} } ).find()
+ 		for doc in table:
+ 			res[doc[u"_id"]]['Lvl'+str(x)] = doc[u"value"]
+
+ # 	###keep only the 5 major ones
+	percOfVolume = {}
+	for doc in res.keys():
+		percOfVolume[doc] = (res[doc]['PoppedUp']/total)*100
+
+	sortedPerc = sorted(percOfVolume.items(), key=operator.itemgetter(1))
+	sortedPerc.reverse()
+	sortedPerc = sortedPerc[:6]
+
+	##remove sorted from dict
+	totalPerc = 0
+	for (doc,p) in sortedPerc:
+		percOfVolume.pop(doc)
+		totalPerc += p
+	##group others
+	others = {}
+	for doc in percOfVolume.keys():
+		for k in res[doc].keys():
+			if k in others.keys():
+				others[k] += res[doc][k]
+			else:
+				others[k] = res[doc][k]
+	sortedPerc.append(('others',100 - totalPerc))
+
+	res['others'] = others
+	ratios = []
+
+	for (doc,p) in sortedPerc:
+		title = doc + ' (' + "{:2.2f}".format(p) + " % of volume)"
+
+		try:
+			staOnPop = res[doc]['Started']/float(res[doc]['PoppedUp'])
+		except Exception, e:
+			staOnPop = 0
+
+		try:
+			l1OnSta = res[doc]['Lvl1']/float(res[doc]['Started'])
+		except Exception, e:
+			l1OnSta = 0
+		line = {
+			'name':title, 
+			'Started / PoppedUp':staOnPop,
+			'Lvl1 / Started':l1OnSta
+		}
+		for x in range(2,8):
+			try:
+				val = min( res[doc]['Lvl'+str(x)] / float(res[doc]['Lvl'+str(x-1)] ), 1 )
+				line['Lvl'+str(x)+' / Lvl'+str(x-1)] = val
+			except Exception, e:
+				line['Lvl'+str(x)+' / Lvl'+str(x-1)] = 0
+		ratios.append(line)
+
+	return ratios
 
 
 def volume_by_UA(ids_conv, ids_company, levels, start, end) :
@@ -405,6 +516,26 @@ def volume_by_UA(ids_conv, ids_company, levels, start, end) :
 	resKeys = resKeys[:6]
 	newRes = [{'_id':k, 'value': (float(res[k])/float(nbOfConv) * 100)} for k in resKeys]
 	return newRes
+
+def safari_version_stats(ids_conv, ids_company, levels, start, end) :
+	nbOfConv = len(ids_conv)
+	versionRE = re.compile('Version/(\S+)')
+	convs = conversations.find({'_id':{'$in': ids_conv}})
+	res = {}
+	for conv in convs:
+		useragent = conv.get('userAgent')
+		parsed = user_agent_parser.Parse(useragent);
+		if 'Safari' in parsed['user_agent']['family'] :
+			strRes = parsed['user_agent']['family']+' : '+parsed['user_agent']['major'] + '.'+parsed['user_agent']['minor']
+			if strRes in res.keys():
+				res[strRes] += 1
+			else :
+				res[strRes] = 1
+	newRes = [{'_id':k, 'value': res[k]} for k in res.keys()]
+	return newRes
+
+
+
 
 def volume_lvl7_by_UA(ids_conv, ids_company, levels, start, end) :
 	nbOfConv = conversations.count({'_id':{'$in': ids_conv}, 'meta.completionLevel':{'$gte':80}})
@@ -534,21 +665,30 @@ def average_conversion_by_UA(company, start, end):
 				'started':0,
 				'exported':0
 			}
-			for x in range(2,9):
+			for x in range(1,9):
 				res[remade]['lvl'+str(x)] = 0
 			keys.append(remade)
 
 		#start
 		if conv['meta']['isStarted']:
 			res[remade]['started'] += 1
+			mFound = messages.count({'conversation': conv['_id']})
+			if mFound > 1:
+				res[remade]['lvl1'] += 1
 
 		lvlFound = 0
+		
+
 		for l in range(0,len(levels)):
-			if conv['meta']['completionLevel'] >= levels[l]:
-				res[remade]['lvl'+str(l+2)] += 1
-				lvlFound = l+2
-			else :
+			try:
+				if conv['meta']['completionLevel'] >= levels[l]:
+					res[remade]['lvl'+str(l+2)] += 1
+					lvlFound = l+2
+				else :
+					continue
+			except Exception, e:
 				continue
+			
 
 		if lvlFound >= 7:
 			#exported - it's here to avoid conversation exported by the sentinel
@@ -556,6 +696,8 @@ def average_conversion_by_UA(company, start, end):
 				res[remade]['exported'] += 1			
 			
 		perc =  int( (n / total)*100)
+		print n, '/', total
+		logging.info('%s on %s',n,total)
 		if perc > lastPerc :
 			print perc, ' %'
 			lastPerc = perc
@@ -589,34 +731,58 @@ def average_conversion_by_UA(company, start, end):
 				others[k] = res[doc][k]
 	sortedPerc.append(('others',100 - totalPerc))
 
-	print sortedPerc
 	res['others'] = others
 
 
 	for (doc,p) in sortedPerc:
 		title = doc + ' (' + "{:2.2f}".format(p) + " % of volume)"
 
-		line = [title, p ,res[doc]['poppedup'], res[doc]['started'] ]
-		for x in range(2,9):
-			line.append( res[doc]['lvl'+str(x)] )
-		line.append(res[doc]['exported'])
+		line = [title, p ]
+		try:
+		 	line.append(res[doc]['poppedup']);
+		except Exception, e:
+		 	line.append(0);
+
+		try:
+		 	line.append(res[doc]['started']);
+	 	except Exception, e:
+		 	line.append(0);
+		
+		for x in range(1,9):
+			try:
+				line.append( res[doc]['lvl'+str(x)] )
+			except Exception, e:
+				line.append(0);
+			
+		try:
+			line.append(res[doc]['exported'])
+		except Exception, e:
+			line.append(0);
+		
 		volumes.append(line)
 
 		staOnPop = 0
 		l2OnSta = 0
-		if res[doc]['poppedup'] > 0:
+		try:
 			staOnPop = res[doc]['started']/float(res[doc]['poppedup'])
-		if res[doc]['started'] > 0:
-			l2OnSta = res[doc]['lvl2']/float(res[doc]['started'])
+		except Exception, e:
+			staOnPop = 0
+			
+		try:
+			l2OnSta = res[doc]['lvl1']/float(res[doc]['started'])
+		except Exception, e:
+			l2OnSta = 0
+			
 		line = [title, staOnPop , l2OnSta ]
-		for x in range(3,8):
-			if res[doc]['lvl'+str(x-1)] > 0:
+		for x in range(2,8):
+			try:
 				line.append( min( res[doc]['lvl'+str(x)] / float(res[doc]['lvl'+str(x-1)] ), 1 ) )
-			else:
+			except Exception, e:
 				line.append(0)
-		if res[doc]['lvl7'] > 0:
+
+		try:
 			line.append( min(res[doc]['exported'] / float(res[doc]['lvl7']),1))
-		else:
+		except Exception, e:
 			line.append(0)
 		ratios.append(line)
 
@@ -624,21 +790,25 @@ def average_conversion_by_UA(company, start, end):
 
 def average_conversation_time_by_level(company, start, end) :
 	id_company = getCompanyId(company)
-	levels = [15,20,30,45,70,80,90];
+	# levels = [15,20,30,45,70,80,90];
+	levels = [15,20,40,50,70,80,90];
 	timesByLvl = OrderedDict()
 	for x in range(2,9):
 		timesByLvl['Lvl'+str(x)] = []
 
 	convs = conversations.find({'meta.createdOn': {'$lt': end , '$gte': start},'company': id_company})
 	for currConv in convs:
-		datesDict = currConv['meta']['completionDates']
-		if len(datesDict) > 0:
-			for d in datesDict:
-				for l in range(0,7):
-					if d['level'] == levels[l]:
-						diff = d['date'] - currConv['meta']['createdOn']
-						timesByLvl['Lvl'+str(l+2)].append(diff.total_seconds())
-
+		try:
+			datesDict = currConv['meta']['completionDates']
+			if len(datesDict) > 0:
+				for d in datesDict:
+					for l in range(0,7):
+						if d['level'] == levels[l]:
+							diff = d['date'] - currConv['meta']['createdOn']
+							timesByLvl['Lvl'+str(l+2)].append(diff.total_seconds())
+		except Exception, e:
+			continue
+		
 	for lvl in timesByLvl:
 		serie = timesByLvl[lvl];
 		currMean = np.mean(serie)
@@ -650,6 +820,7 @@ def average_conversation_time_by_level(company, start, end) :
 	return timesByLvl
 
 def time_spent_on_questions(company, start, end) :
+	logging.info('time_spent_on_questions')
 	id_company = getCompanyId(company)
 
 	#get all conversations
@@ -669,6 +840,7 @@ def time_spent_on_questions(company, start, end) :
 
 def nps_by_device(company, start, end) : 
 	print 'nps_by_device'
+	logging.info('nps_by_device')
 	id_company = getCompanyId(company)
 
 	ids_conv = conversations.find({'meta.createdOn': {'$lt': end , '$gte': start},'company': id_company},{'_id':True, 'userAgent':True})

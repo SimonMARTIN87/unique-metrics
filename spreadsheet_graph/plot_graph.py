@@ -326,12 +326,13 @@ def create_multiple_lines(folderName, dates, matrix, title) :
 			x = dates,
 			y = matrix[line],
 			mode = 'lines',
-			name = line
+			name = line,
+			line = dict(shape='spline')
 		)
 		data.append(trace)
 	layout = go.Layout(
 		title=title,
-		yaxis = dict(title='Number of conversations')
+		yaxis = dict(title='% of Conversion')
 	)
 	name = title.replace(' ','_')
 	fig = go.Figure(data=data, layout=layout)
@@ -347,7 +348,7 @@ def create_multiple_perc_lines(folderName, xAxisLabels, linesArray, title):
 			y= line,
 			mode = 'lines',
 			name = lineName,
-			line = dict(shape='spline')
+			line = dict(shape='line')
 			))
 	layout = go.Layout(
 		title=title,
@@ -469,6 +470,30 @@ def create_group_nbconv1(folderName,y,dates, title) :
 	fig = go.Figure(data=data, layout=layout)
 	py.plot(fig, filename=folderName+'/'+name,sharing='private')
 
+def create_groupTotal(folderName,total, x, title) : 
+	trace = go.Bar(
+		x=x,
+		y=total,
+		name='All devices'
+	)
+	layout = go.Layout(
+	    barmode='group',
+	    title=title,
+	    yaxis=dict(
+        title='Number',
+        titlefont=dict(
+            size=16,
+            color='rgb(107, 107, 107)'
+        ),
+        tickfont=dict(
+            size=14,
+            color='rgb(107, 107, 107)'
+        )
+    )
+	)
+	name = title.replace(' ','_')
+	fig = go.Figure(data=[trace], layout=layout)
+	py.plot(fig, filename=folderName+'/'+name,sharing='private')
 
 def create_group(folderName,mobile,desktop, x, title) : 
 	trace1 = go.Bar(
@@ -503,7 +528,7 @@ def create_group(folderName,mobile,desktop, x, title) :
 	py.plot(fig, filename=folderName+'/'+name,sharing='private')
 
 
-def create_multiple_bars(folderName, dates, matrix, title):
+def create_multiple_bars(folderName, dates, matrix, title, yaxisTitle = 'Number'):
 	data = []
 	for line in matrix.keys() :
 		if line == 'Dates' :
@@ -514,9 +539,12 @@ def create_multiple_bars(folderName, dates, matrix, title):
 			name= line
 		)
 		data.append(trace)
+	yaxis = dict(title=yaxisTitle)
+	if yaxisTitle == '%':
+		yaxis['range']=[0,100]
 	layout = go.Layout(
 		title=title,
-		yaxis = dict(title='Number')
+		yaxis = yaxis
 	)
 	name = title.replace(' ','_')
 	fig = go.Figure(data=data, layout=layout)
@@ -528,7 +556,7 @@ def create_multiple_boxPlot(folderName, lines, title):
 		data.append(go.Box(x=lines[line], name=line, boxpoints = False))
 	layout = go.Layout(
 		title = title,
-		xaxis=dict(title='Seconds', range=[0,1500])
+		xaxis=dict(title='Minutes', range=[0,35])
 		)
 	name = title.replace(' ','_')
 	fig = go.Figure(data=data, layout=layout)

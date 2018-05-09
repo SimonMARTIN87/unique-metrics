@@ -1,6 +1,7 @@
 from datetime import timedelta, datetime, date
 import numpy as np
 from produce_stats import ids_conv, nps_by_time, count_conversations, count_level_reached, sentinel_level, time_by_session
+import logging
 
 def evolution_by_period(start, end,function,company,period=None) :
 	if isinstance(start, date) is False : 
@@ -26,6 +27,8 @@ def evolution_by_period(start, end,function,company,period=None) :
 		element = function(id_conv, ids_company,levels,start,end)
 
 		print function, start, 'OK'
+		logging.info('%s on %s OK',function.__name__, start)
+
 		
 		if isinstance(element,int) : 
 			percentages.append([element])
